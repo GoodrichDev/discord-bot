@@ -54,6 +54,12 @@ module.exports = {
                 return interaction.reply({ content:'🚫 Only the server owner may run this.', ephemeral:true });
             await interaction.deferReply({ ephemeral: true });
 
+            const linkedRole = interaction.guild.roles.cache.find(r => r.name === 'Linked');
+            if (!linkedRole) {
+                console.error('[Sync] could not find a role named "Linked" in', interaction.guild.id);
+                return interaction.editReply('❌ I couldn’t find a role named **Linked** in this server.');
+            }
+
             const members = await interaction.guild.members.fetch();
             let synced = 0;
             for (const m of members.values()) {
