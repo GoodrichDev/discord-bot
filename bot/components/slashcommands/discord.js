@@ -48,12 +48,12 @@ module.exports = {
         }
 
         if (sub === 'sync') {
-            console.log(`[Discord Sync] invoked by ${interaction.user.tag}`);
             if (!interaction.guild)
                 return interaction.reply({ content:'❌ Only in servers.', ephemeral:true });
             if (interaction.user.id !== interaction.guild.ownerId)
                 return interaction.reply({ content:'🚫 Only the server owner may run this.', ephemeral:true });
             await interaction.deferReply({ ephemeral: true });
+
             const members = await interaction.guild.members.fetch();
             let synced = 0;
             for (const m of members.values()) {
@@ -61,7 +61,7 @@ module.exports = {
                 try {
                     const link = await postQuery(process.env.DISCORD_LINK_API, [m.id]);
                     if (!link.uuid) continue;
-                    await m.roles.add(process.env.LINKED_ROLE_ID);
+                    await m.roles.add(linkedRole);
                     const uname = await fetchUsernameFromPlayerDB(link.uuid);
                     await m.setNickname(uname);
                     synced++;
