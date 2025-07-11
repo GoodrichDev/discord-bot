@@ -1,22 +1,17 @@
 // bot/components/slashcommands/tracker.js
-const {
-    SlashCommandBuilder,
-    EmbedBuilder
-} = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fs    = require('fs');
 const path  = require('path');
 const axios = require('axios');
 const { postQuery } = require('../commons/api');
 
-
-// ─── load blacklist of hidden player names (one per line) ─────────────────
+// ─── load blacklist of hidden player names ────────────────────────────────
 const hiddenPlayers = fs
     .readFileSync(path.join(__dirname, '../../utils/hiddenplayers.txt'), 'utf-8')
     .split(/\r?\n/)
     .map(l => l.trim().toLowerCase())
     .filter(Boolean);
 const hiddenSet = new Set(hiddenPlayers);
-
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -62,7 +57,7 @@ module.exports = {
         }
 
         // 3) pair & filter by wilderness + blacklist
-        const entries = players
+        let entries = players
             .map((p, i) => {
                 const x   = coords[i][0], z = coords[i][1];
                 const rec = locData[i] || {};
@@ -74,12 +69,8 @@ module.exports = {
                     nation: rec.nation?.name
                 };
             })
-            .filter(e =>
-                // only those in desired zone
-                e.isW === wantWilderness &&
-                // and NOT in the hidden list
-                !hiddenSet.has(e.name.toLowerCase())
-            );
+            .filter(e => e.isW === wantWilderness)
+            .filter(e => !hiddenSet.has(e.name.toLowerCase()));
 
         if (!entries.length) {
             return interaction.editReply(
@@ -87,25 +78,34 @@ module.exports = {
             );
         }
 
-        // 4) build the embed
+        // Limit to Discord embed max fields (25)
+        const MAX_FIELDS = 25;
+        const displayEntries = entries.slice(0, MAX_FIELDS);
+
         const embed = new EmbedBuilder()
             .setTitle(`Players ${wantWilderness ? 'in Wilderness' : 'in Towns'}`)
             .setColor(wantWilderness ? 0xFF4500 : 0x1ABC9C)
             .setTimestamp()
             .setFooter({ text: process.env.TOOLKIT_FOOTER || '' });
 
-        for (const e of entries) {
+        for (const e of displayEntries) {
             const locLine = wantWilderness
                 ? 'Wilderness'
-                : `Town: ${e.town ?? '—'}, Nation: ${e.nation ?? '—'}`;
+                : `Town: ${e.town || '—'}, Nation: ${e.nation || '—'}`;
             const mapUrl = `https://earthpol.com/map/#world:${e.x}:65:${e.z}:5:0:0:0:0:perspective`;
 
             embed.addFields({
                 name: e.name,
-                value:
-                    `X: ${e.x}, Z: ${e.z}\n` +
-                    `${locLine}\n` +
-                    `[View on Map](${mapUrl})`,
+                value: `X: ${e.x}, Z: ${e.z}\n${locLine}\n[View on Map](${mapUrl})`,
+                inline: false
+            });
+        }
+
+        // If more than MAX_FIELDS, note it
+        if (entries.length > MAX_FIELDS) {
+            embed.addFields({
+                name: '…',
+                value: `And ${entries.length - MAX_FIELDS} more players not shown...`,
                 inline: false
             });
         }
