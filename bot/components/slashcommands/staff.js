@@ -24,18 +24,29 @@ export const data = new SlashCommandBuilder()
             .addIntegerOption(opt =>
                 opt
                     .setName('count')
-                    .setDescription('Number of staff to show')
-                    .setRequired(true)
+                    .setDescription('Number of staff to show (default 5)')
+                    .setRequired(false)
             )
             .addStringOption(opt =>
                 opt
                     .setName('order')
                     .setDescription('Sort order (SQL style)')
-                    .setRequired(false)
                     .addChoices(
                         { name: 'ASC',  value: 'ASC' },
                         { name: 'DESC', value: 'DESC' }
                     )
+            )
+            .addStringOption(opt =>
+                opt
+                    .setName('before')
+                    .setDescription('Only include staff last online before this date (MM/DD/YYYY)')
+                    .setRequired(false)
+            )
+            .addStringOption(opt =>
+                opt
+                    .setName('since')
+                    .setDescription('Only include staff last online since this date (MM/DD/YYYY)')
+                    .setRequired(false)
             )
     );
 
@@ -81,29 +92,52 @@ export async function execute(interaction) {
                     ? online.map(p => `• ${p.name}`).join('\n')
                     : 'No staff online at the moment.'
             )
-            .setTimestamp();
+            .setTimestamp()
+            .setFooter({ text: process.env.TOOLKIT_FOOTER || '' });
         return interaction.editReply({ embeds: [embed] });
     }
 
     // /staff lastonline
     if (sub === 'lastonline') {
-        const count = interaction.options.getInteger('count');
-        const order = (interaction.options.getString('order') || 'DESC').toUpperCase();
+        const count     = interaction.options.getInteger('count') ?? 5;
+        const order     = (interaction.options.getString('order') || 'DESC').toUpperCase();
+        const beforeStr = interaction.options.getString('before');
+        const sinceStr  = interaction.options.getString('since');
 
-        // Sort by lastOnline
-        const sorted = players
-            .slice()
+        // Filter by timestamp existence
+        let filtered = players.filter(p => p.timestamps?.lastOnline);
+
+        // Filter before date
+        if (beforeStr) {
+            const beforeDate = new Date(beforeStr);
+            if (isNaN(beforeDate)) {
+                return interaction.editReply('❌ Invalid date for `before`. Use MM/DD/YYYY.');
+            }
+            filtered = filtered.filter(p => p.timestamps.lastOnline <= beforeDate.getTime());
+        }
+
+        // Filter since date
+        if (sinceStr) {
+            const sinceDate = new Date(sinceStr);
+            if (isNaN(sinceDate)) {
+                return interaction.editReply('❌ Invalid date for `since`. Use MM/DD/YYYY.');
+            }
+            filtered = filtered.filter(p => p.timestamps.lastOnline >= sinceDate.getTime());
+        }
+
+        // Sort and limit
+        const sorted = filtered
             .sort((a, b) => {
-                const aTime = a.timestamps?.lastOnline || 0;
-                const bTime = b.timestamps?.lastOnline || 0;
+                const aTime = a.timestamps.lastOnline;
+                const bTime = b.timestamps.lastOnline;
                 return order === 'ASC' ? aTime - bTime : bTime - aTime;
             })
             .slice(0, count);
 
+        // Build description
         const description = sorted
             .map(p => {
-                const ts = p.timestamps?.lastOnline;
-                const date = ts ? new Date(ts).toLocaleString() : 'Unknown';
+                const date = new Date(p.timestamps.lastOnline).toLocaleString();
                 return `• ${p.name} — Last: ${date}`;
             })
             .join('\n');
@@ -112,7 +146,8 @@ export async function execute(interaction) {
             .setTitle(`🕒 Staff LastOnline (${order} LIMIT ${count})`)
             .setColor(0x0099ff)
             .setDescription(description || 'No data available.')
-            .setTimestamp();
+            .setTimestamp()
+            .setFooter({ text: process.env.TOOLKIT_FOOTER || '' });
 
         return interaction.editReply({ embeds: [embed] });
     }

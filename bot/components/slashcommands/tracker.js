@@ -91,7 +91,8 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setTitle(`Players ${wantWilderness ? 'in Wilderness' : 'in Towns'}`)
             .setColor(wantWilderness ? 0xFF4500 : 0x1ABC9C)
-            .setTimestamp();
+            .setTimestamp()
+            .setFooter({ text: process.env.TOOLKIT_FOOTER || '' });
 
         for (const e of entries) {
             const locLine = wantWilderness

@@ -105,7 +105,8 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setTitle(`Shops selling \`${query}\``)
-                .setColor(0x1ABC9C);
+                .setColor(0x1ABC9C)
+                .setFooter({ text: process.env.TOOLKIT_FOOTER || '' });
 
             for (const d of details) {
                 const item   = d.item.match(/ItemStack\{(.+)\}/)?.[1] || d.item;
