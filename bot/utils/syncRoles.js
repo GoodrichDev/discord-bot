@@ -4,6 +4,9 @@ const path  = require('path');
 const axios = require('axios');
 
 // Environment config
+const NATIONS_API     = process.env.NATIONS_API;
+const DISCORD_API     = process.env.DISCORD_LINK_API;
+const PLAYERS_API     = process.env.PLAYERS_API;
 const SYNC_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS, 10) || 10 * 60 * 1000;
 
 // Helper: normalize 32-char hex to dashed UUID
@@ -29,19 +32,19 @@ function loadAllConfigs() {
 
 // Fetch full nation data by UUID
 async function fetchNationData(nationUuid) {
-    const res = await axios.post(process.env.NATIONS_API, { query: [nationUuid] });
+    const res = await axios.post(NATIONS_API, { query: [nationUuid] });
     return res.data[0];
 }
 
 // Fetch Minecraft UUID by Discord ID
 async function fetchDiscordMapping(discordId) {
-    const res = await axios.post(process.env.NATIONS_API, { query: [discordId] });
+    const res = await axios.post(DISCORD_API,  { query: [discordId] });
     return res.data.uuid || null;
 }
 
 // Fetch player's nation UUID by Minecraft UUID
 async function fetchPlayerNationUuid(playerUuid) {
-    const res = await axios.post(process.env.PLAYERS_API, { query: [playerUuid] });
+    const res = await axios.post(PLAYERS_API, { query: [playerUuid] });
     const player = res.data[0] || {};
     return (player.status?.hasNation && player.nation?.uuid) ? player.nation.uuid : null;
 }
@@ -53,10 +56,13 @@ async function syncRoles(client) {
 
     for (const { guildId, config } of entries) {
         try {
-            // Require nation_uuid and at least one role
+            console.log(`→ Guild ${guildId} config:`, config);
             const { nation_uuid, role_citizen_id, role_allied_id, role_enemy_id, role_linked_id } = config;
-            if (!nation_uuid) continue;
-            // 1) fetch nation
+            if (!nation_uuid) {
+                console.log(`  • Skipping ${guildId}: no nation_uuid set.`);
+                continue;
+            }
+            // 1) fetch nation data
             const nation = await fetchNationData(nation_uuid);
             const residentSet = new Set(nation.residents.map(r => normalizeUuid(r.uuid)));
             const alliedSet   = new Set(nation.allies.map(a => normalizeUuid(a.uuid)));
@@ -65,46 +71,65 @@ async function syncRoles(client) {
             // 2) fetch guild & members
             const guild = await client.guilds.fetch(guildId);
             await guild.members.fetch();
+            console.log(`  • Fetched ${guild.memberCount} members`);
 
             // 3) loop members
             for (const member of guild.members.cache.values()) {
                 if (member.user.bot) continue;
 
+                // lookup link
                 const discordUuid = await fetchDiscordMapping(member.id).catch(() => null);
-                const playerUuid = normalizeUuid(discordUuid);
-                const isLinked = Boolean(playerUuid);
+                const playerUuid  = normalizeUuid(discordUuid);
+                const isLinked    = Boolean(playerUuid);
 
-                // linked role
+                // linked role sync
                 if (role_linked_id) {
-                    if (isLinked) member.roles.add(role_linked_id).catch(()=>{});
-                    else          member.roles.remove(role_linked_id).catch(()=>{});
+                    const hasLinked = member.roles.cache.has(role_linked_id);
+                    if (isLinked && !hasLinked) {
+                        console.log(`    → Adding Linked role to ${member.user.tag}`);
+                        await member.roles.add(role_linked_id).catch(console.error);
+                    } else if (!isLinked && hasLinked) {
+                        console.log(`    → Removing Linked role from ${member.user.tag}`);
+                        await member.roles.remove(role_linked_id).catch(console.error);
+                    }
                 }
+
                 if (!isLinked) {
-                    // remove all nation roles if not linked
-                    [role_citizen_id, role_allied_id, role_enemy_id].forEach(r => r && member.roles.remove(r).catch(()=>{}));
+                    // if unlinked, remove all nation roles
+                    [role_citizen_id, role_allied_id, role_enemy_id].forEach(async r => {
+                        if (r && member.roles.cache.has(r)) {
+                            console.log(`    → Removing ${r} from ${member.user.tag}`);
+                            await member.roles.remove(r).catch(console.error);
+                        }
+                    });
                     continue;
                 }
 
                 // fetch player nation
                 const playerNation = await fetchPlayerNationUuid(playerUuid).catch(() => null);
-                const theirNationUuid = normalizeUuid(playerNation);
+                const theirUuid     = normalizeUuid(playerNation);
 
-                // decide roles
+                // decide which roles they should have
                 const shouldCitizen = role_citizen_id && residentSet.has(playerUuid);
-                const shouldAllied  = role_allied_id   && alliedSet.has(theirNationUuid);
-                const shouldEnemy   = role_enemy_id    && enemySet.has(theirNationUuid);
+                const shouldAllied  = role_allied_id   && alliedSet.has(theirUuid);
+                const shouldEnemy   = role_enemy_id    && enemySet.has(theirUuid);
 
-                // sync helper
-                const syncOne = async (rid, doAdd) => {
-                    if (!rid) return;
-                    const has = member.roles.cache.has(rid);
-                    if (doAdd && !has) await member.roles.add(rid).catch(()=>{});
-                    if (!doAdd && has) await member.roles.remove(rid).catch(()=>{});
-                };
+                // sync a given role
+                async function syncOne(roleId, shouldHave, label) {
+                    if (!roleId) return;
+                    const has = member.roles.cache.has(roleId);
+                    if (shouldHave && !has) {
+                        console.log(`    → Adding ${label} to ${member.user.tag}`);
+                        await member.roles.add(roleId).catch(console.error);
+                    } else if (!shouldHave && has) {
+                        console.log(`    → Removing ${label} from ${member.user.tag}`);
+                        await member.roles.remove(roleId).catch(console.error);
+                    }
+                }
 
-                await syncOne(role_citizen_id, shouldCitizen);
-                await syncOne(role_allied_id,  shouldAllied);
-                await syncOne(role_enemy_id,   shouldEnemy);
+                await syncOne(role_citizen_id, shouldCitizen, 'Citizen');
+                await syncOne(role_allied_id,  shouldAllied,  'Allied');
+                await syncOne(role_enemy_id,   shouldEnemy,   'Enemy');
             }
         } catch (e) {
             console.error(`Error syncing guild ${guildId}:`, e);
@@ -115,7 +140,7 @@ async function syncRoles(client) {
 
 // Scheduler
 function startScheduler(client) {
-    // initial runSYNC_INTERVAL_MS
+    // initial run
     syncRoles(client);
     // schedule
     setInterval(() => syncRoles(client), SYNC_INTERVAL_MS);
