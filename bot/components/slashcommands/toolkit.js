@@ -37,7 +37,8 @@ function saveConfig(guildId, config) {
 
 // Utility to extract just the ID from a mention or raw string
 function extractId(input) {
-    const match = input.match(/^(?:<@&)?(\d+)>?$/);
+    // matches <@123>, <@!123>, or <@&123>
+    const match = input.match(/^<@(?:&|!)?(\d+)>$/);
     return match ? match[1] : input;
 }
 

@@ -23,8 +23,8 @@ const client = new Client({
 client.commands = new Collection();
 
 // shop monitor
-const monitor = require('./bot/utils/monitor');
-monitor.setClient(client);
+//const monitor = require('./bot/utils/monitor');
+// monitor.setClient(client);
 
 // helper to read directory
 function dirSync(dir) {
@@ -74,9 +74,9 @@ client.once('ready', async () => {
     startScheduler(client);
 
     // initialize shop monitor
-    await monitor.seedShops();
-    console.log(`Seeded shop cache with ${monitor.getCacheSize()} entries.`);
-    setInterval(monitor.checkShops, 5 * 60 * 1000);
+    //await monitor.seedShops();
+    //console.log(`Seeded shop cache with ${monitor.getCacheSize()} entries.`);
+    //setInterval(monitor.checkShops, 5 * 60 * 1000);
 });
 
 // register slash commands when joining a new guild
