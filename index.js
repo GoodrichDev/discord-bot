@@ -53,6 +53,7 @@ for (const file of dirSync(eventsPath).filter(f => f.endsWith('.js'))) {
 token = process.env.DISCORD_TOKEN;
 const rest = new REST().setToken(token);
 const commandData = client.commands.map(cmd => cmd.data.toJSON());
+const { startScheduler } = require('./bot/utils/syncRoles');
 
 // register slash commands on bot ready for all guilds
 client.once('ready', async () => {
@@ -68,6 +69,9 @@ client.once('ready', async () => {
     } catch (err) {
         console.error('❌ Error registering slash commands:', err);
     }
+
+    // Run role sync every x ms
+    startScheduler(client);
 
     // initialize shop monitor
     await monitor.seedShops();
