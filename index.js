@@ -18,9 +18,11 @@ const client = new Client({
         GatewayIntentBits.MessageContent
     ]
 });
-// extend with collections
+
+// extend client with command collection
 client.commands = new Collection();
 
+// shop monitor
 const monitor = require('./bot/utils/monitor');
 monitor.setClient(client);
 
@@ -47,25 +49,44 @@ for (const file of dirSync(eventsPath).filter(f => f.endsWith('.js'))) {
     }
 }
 
-// register slash commands on ready (guild for instant testing)
+// setup REST for command registration
+token = process.env.DISCORD_TOKEN;
+const rest = new REST().setToken(token);
+const commandData = client.commands.map(cmd => cmd.data.toJSON());
+
+// register slash commands on bot ready for all guilds
 client.once('ready', async () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
-    const rest = new REST().setToken(process.env.DISCORD_TOKEN);
-    const data = client.commands.map(cmd => cmd.data.toJSON());
     try {
-        console.log('🚀 Registering slash commands to guild...');
-        await rest.put(
-            Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-            { body: data }
-        );
-        console.log('✅ Slash commands registered to guild.');
+        for (const guild of client.guilds.cache.values()) {
+            await rest.put(
+                Routes.applicationGuildCommands(process.env.CLIENT_ID, guild.id),
+                { body: commandData }
+            );
+            console.log(`→ Registered commands to guild ${guild.name} (${guild.id})`);
+        }
     } catch (err) {
         console.error('❌ Error registering slash commands:', err);
     }
 
+    // initialize shop monitor
     await monitor.seedShops();
     console.log(`Seeded shop cache with ${monitor.getCacheSize()} entries.`);
     setInterval(monitor.checkShops, 5 * 60 * 1000);
 });
 
+// register slash commands when joining a new guild
+client.on('guildCreate', async (guild) => {
+    try {
+        await rest.put(
+            Routes.applicationGuildCommands(process.env.CLIENT_ID, guild.id),
+            { body: commandData }
+        );
+        console.log(`→ Registered commands to new guild ${guild.name} (${guild.id})`);
+    } catch (err) {
+        console.error(`✖ Failed to register on new guild ${guild.id}:`, err);
+    }
+});
+
+// login
 client.login(process.env.DISCORD_TOKEN);
