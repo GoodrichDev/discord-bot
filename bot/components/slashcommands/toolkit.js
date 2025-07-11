@@ -35,6 +35,7 @@ function saveConfig(guildId, config) {
     fs.writeFileSync(getConfigPath(guildId), JSON.stringify(config, null, 2));
 }
 
+// Utility to extract just the ID from a mention or raw string
 function extractId(input) {
     const match = input.match(/^(?:<@&)?(\d+)>?$/);
     return match ? match[1] : input;
@@ -44,7 +45,8 @@ function extractId(input) {
 export const data = new SlashCommandBuilder()
     .setName('toolkit')
     .setDescription('Configure guild-specific settings')
-    // /toolkit set nation|role ...
+
+    // set command
     .addSubcommand(sub => sub
         .setName('set')
         .setDescription('Set a configuration value')
@@ -63,7 +65,13 @@ export const data = new SlashCommandBuilder()
             .setName('value')
             .setDescription('Nation name or Role ID')
             .setRequired(true)))
-    // /toolkit admin add|remove role|user <id>
+
+    // createroles command
+    .addSubcommand(sub => sub
+        .setName('createroles')
+        .setDescription('Create Citizen, Allied, Enemy, Linked roles and save their IDs'))
+
+    // admin group
     .addSubcommandGroup(group => group
         .setName('admin')
         .setDescription('Manage toolkit administrators')
@@ -77,7 +85,7 @@ export const data = new SlashCommandBuilder()
                 .addChoices({ name: 'Role', value: 'role' }, { name: 'User', value: 'user' }))
             .addStringOption(opt => opt
                 .setName('id')
-                .setDescription('Role ID or User ID')
+                .setDescription('Role ID or User ID or Mention')
                 .setRequired(true)))
         .addSubcommand(sub => sub
             .setName('remove')
@@ -89,7 +97,7 @@ export const data = new SlashCommandBuilder()
                 .addChoices({ name: 'Role', value: 'role' }, { name: 'User', value: 'user' }))
             .addStringOption(opt => opt
                 .setName('id')
-                .setDescription('Role ID or User ID')
+                .setDescription('Role ID or User ID or Mention')
                 .setRequired(true))))
 ;
 
@@ -118,10 +126,10 @@ export async function execute(interaction) {
     // /toolkit set
     if (sub === 'set') {
         const key   = interaction.options.getString('key');
-        const value = interaction.options.getString('value');
+        let   value = interaction.options.getString('value');
 
         if (key === 'nation') {
-            // fetch all nations to match
+            // fetch and match nations as before...
             let allNations;
             try {
                 const res = await axios.get(process.env.NATIONS_API);
@@ -130,11 +138,9 @@ export async function execute(interaction) {
                 console.error('Failed to fetch nation list:', err);
                 return interaction.editReply('❌ Could not retrieve list of nations.');
             }
-            // try exact or uuid match
             let nation = allNations.find(n => n.name.toLowerCase() === value.toLowerCase());
             if (!nation) nation = allNations.find(n => n.uuid.toLowerCase() === value.toLowerCase());
             if (!nation) {
-                // suggest containing matches
                 const suggestions = allNations
                     .filter(n => n.name.toLowerCase().includes(value.toLowerCase()))
                     .map(n => n.name);
@@ -154,29 +160,58 @@ export async function execute(interaction) {
             role_linked : 'role_linked_id'
         };
         if (mapping[key]) {
-            const id = extractId(value);
+            const id = extractId(interaction.options.getString('value'));
             config[mapping[key]] = id;
             saveConfig(guildId, config);
             return interaction.editReply(`✅ **${key}** set to <@&${id}>.`);
         }
     }
 
+    // /toolkit createroles
+    if (sub === 'createroles') {
+        const guild = interaction.guild;
+        // Create roles
+        const citizen = await guild.roles.create({ name: 'Citizen',     reason: 'Toolkit auto-created role' });
+        const allied   = await guild.roles.create({ name: 'Allied',      reason: 'Toolkit auto-created role' });
+        const enemy    = await guild.roles.create({ name: 'Enemy',       reason: 'Toolkit auto-created role' });
+        const linked   = await guild.roles.create({ name: 'Linked',      reason: 'Toolkit auto-created role' });
+
+        // Save IDs
+        config.role_citizen_id = citizen.id;
+        config.role_allied_id  = allied.id;
+        config.role_enemy_id   = enemy.id;
+        config.role_linked_id  = linked.id;
+        saveConfig(guildId, config);
+
+        const embed = new EmbedBuilder()
+            .setTitle('✅ Roles Created & Saved')
+            .setDescription(
+                `• Citizen: <@&${citizen.id}>\n` +
+                `• Allied: <@&${allied.id}>\n` +
+                `• Enemy: <@&${enemy.id}>\n` +
+                `• Linked: <@&${linked.id}>`
+            )
+            .setColor(0x00FF00)
+            .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+    }
+
     // /toolkit admin add/remove
     if (group === 'admin') {
         const act  = sub; // 'add' or 'remove'
         const type = interaction.options.getString('type');
-        let   id   = interaction.options.getString('id');
-        id = extractId(id);
+        let   id   = extractId(interaction.options.getString('id'));
         const list = config.toolkit_admins[type === 'role' ? 'roles' : 'users'];
 
         if (act === 'add') {
             if (!list.includes(id)) list.push(id);
             saveConfig(guildId, config);
-            return interaction.editReply(`✅ Added ${type} \`${id}\` to toolkit admins.`);
+            return interaction.editReply(`✅ Added ${type} <@${type === 'role' ? '&' : ''}${id}> to toolkit admins.`);
         } else {
             config.toolkit_admins[type === 'role' ? 'roles' : 'users'] = list.filter(x => x !== id);
             saveConfig(guildId, config);
-            return interaction.editReply(`✅ Removed ${type} \`${id}\` from toolkit admins.`);
+            return interaction.editReply(`✅ Removed ${type} <@${type === 'role' ? '&' : ''}${id}> from toolkit admins.`);
         }
     }
 
