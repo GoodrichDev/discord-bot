@@ -79,7 +79,7 @@ module.exports = {
         }
 
         // Limit to Discord embed max fields (25)
-        const MAX_FIELDS = 25;
+        const MAX_FIELDS = 24;
         const displayEntries = entries.slice(0, MAX_FIELDS);
 
         const embed = new EmbedBuilder()
