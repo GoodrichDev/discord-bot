@@ -144,19 +144,40 @@ module.exports = {
             }
             const [ , dir ] = i.customId.split('_');
             page = dir === 'next' ? page + 1 : page - 1;
-            await i.update({
-                embeds: [generateEmbed(page)],
-                components: [generateRow(page)]
-            });
+
+            try {
+                await i.update({
+                    embeds: [generateEmbed(page)],
+                    components: [generateRow(page)]
+                });
+            } catch (err) {
+                console.error('Error updating chatsearch page:', err);
+            }
         });
 
+
         collector.on('end', async () => {
-            // disable buttons
-            const disabledRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('noop').setLabel('← Prev').setStyle(ButtonStyle.Secondary).setDisabled(true),
-                new ButtonBuilder().setCustomId('noop').setLabel('Next →').setStyle(ButtonStyle.Secondary).setDisabled(true)
-            );
-            await message.edit({ components: [disabledRow] });
+            // give them unique IDs so Discord doesn't complain
+            const disabledPrev = new ButtonBuilder()
+                .setCustomId('disabled_prev')
+                .setLabel('← Prev')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true);
+
+            const disabledNext = new ButtonBuilder()
+                .setCustomId('disabled_next')
+                .setLabel('Next →')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true);
+
+            const disabledRow = new ActionRowBuilder().addComponents(disabledPrev, disabledNext);
+
+            try {
+                await message.edit({ components: [disabledRow] });
+            } catch (err) {
+                console.error('Failed to disable chatsearch buttons:', err);
+                // optionally notify owner or swallow
+            }
         });
     }
 };
