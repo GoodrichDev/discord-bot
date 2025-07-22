@@ -9,6 +9,11 @@ const {
 const fs = require('node:fs');
 const path = require('node:path');
 
+require('./bot/utils/townCache');
+require('./bot/utils/playerCache');
+require('./bot/utils/nationCache');
+require('./bot/utils/economyCache');
+
 // build the client
 const client = new Client({
     intents: [
@@ -18,6 +23,8 @@ const client = new Client({
         GatewayIntentBits.MessageContent
     ]
 });
+
+
 
 // extend client with command collection
 client.commands = new Collection();
