@@ -1,3 +1,4 @@
+// bot/components/slashcommands/shop.js
 const {
     SlashCommandBuilder,
     EmbedBuilder,
@@ -10,7 +11,6 @@ const path  = require('path');
 const axios = require('axios');
 const { postQuery } = require('../commons/api');
 
-
 const materials = fs
     .readFileSync(path.join(__dirname, '../../utils/materials.txt'), 'utf-8')
     .split(/\r?\n/)
@@ -20,7 +20,7 @@ const materials = fs
     })
     .filter(Boolean);
 
-
+// ----- preload owner lists -----
 let ownerNames = [], ownerUUIDs = [];
 (async () => {
     try {
@@ -68,7 +68,6 @@ module.exports = {
         const sub = interaction.options.getSubcommand();
         await interaction.deferReply();
 
-        // common helpers
         const fetchAll = async () => (await axios.get(process.env.SHOP_API)).data;
         const buildEmbed = (pageslice, pageTitle) => {
             const e = new EmbedBuilder().setTitle(pageTitle).setColor(0x1ABC9C);
@@ -96,12 +95,11 @@ module.exports = {
                 return interaction.editReply(`🔍 No shops found for \`${query}\`.`);
             }
 
-            // fetch details, locations, owners
-            const ids       = matched.map(s => s.id);
-            const details   = await postQuery(process.env.SHOP_API,    ids.map(String));
-            const coords    = details.map(d => [Math.floor(d.location.x), Math.floor(d.location.z)]);
-            const locs      = await postQuery(process.env.LOCATION_API, coords);
-            const owners    = await postQuery(process.env.PLAYERS_API,   details.map(d => d.owner));
+            const ids     = matched.map(s => s.id);
+            const details = await postQuery(process.env.SHOP_API,    ids.map(String));
+            const coords  = details.map(d => [Math.floor(d.location.x), Math.floor(d.location.z)]);
+            const locs    = await postQuery(process.env.LOCATION_API, coords);
+            const owners  = await postQuery(process.env.PLAYERS_API,   details.map(d => d.owner));
 
             const embed = new EmbedBuilder()
                 .setTitle(`Shops selling \`${query}\``)
@@ -144,10 +142,13 @@ module.exports = {
             const row   = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`shop_list_prev_${page}`)
-                    .setLabel('<').setStyle(ButtonStyle.Primary).setDisabled(true),
+                    .setLabel('<')
+                    .setStyle(ButtonStyle.Primary)
+                    .setDisabled(true),
                 new ButtonBuilder()
                     .setCustomId(`shop_list_next_${page}`)
-                    .setLabel('>').setStyle(ButtonStyle.Primary)
+                    .setLabel('>')
+                    .setStyle(ButtonStyle.Primary)
                     .setDisabled(all.length <= (page+1)*pageSize)
             );
 
@@ -162,8 +163,8 @@ module.exports = {
                 return interaction.editReply(`🔍 No owner named **${name}**.`);
             }
 
-            const uuid = ownerUUIDs[idx];
-            const all  = await fetchAll();
+            const uuid     = ownerUUIDs[idx];
+            const all      = await fetchAll();
             const filtered = all.filter(s => s.owner === uuid).sort((a,b)=>b.price-a.price);
 
             if (!filtered.length) {
@@ -176,10 +177,13 @@ module.exports = {
             const row      = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`shop_owner_prev_${uuid}_${page}`)
-                    .setLabel('<').setStyle(ButtonStyle.Primary).setDisabled(true),
+                    .setLabel('<')
+                    .setStyle(ButtonStyle.Primary)
+                    .setDisabled(true),
                 new ButtonBuilder()
                     .setCustomId(`shop_owner_next_${uuid}_${page}`)
-                    .setLabel('>').setStyle(ButtonStyle.Primary)
+                    .setLabel('>')
+                    .setStyle(ButtonStyle.Primary)
                     .setDisabled(filtered.length <= (page+1)*pageSize)
             );
 
@@ -190,7 +194,6 @@ module.exports = {
     // ─── Autocomplete handler ────────────────────────────────────────────────
     async autocomplete(interaction) {
         const sub     = interaction.options.getSubcommand();
-        // **normalize to UPPER** so startsWith() works on your uppercase materials[]
         const focused = interaction.options.getFocused().toUpperCase();
 
         if (sub === 'find') {
@@ -210,3 +213,7 @@ module.exports = {
         }
     }
 };
+
+// ─── EXPORT the two arrays so other modules can require them ───
+module.exports.ownerNames  = ownerNames;
+module.exports.ownerUUIDs  = ownerUUIDs;

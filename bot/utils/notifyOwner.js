@@ -1,73 +1,53 @@
 const fs   = require('fs');
 const path = require('path');
 
-const GUILDS_DIR    = path.resolve(__dirname, '../guilds');
-const NOTIFY_WINDOW = 5 * 24 * 60 * 60 * 1000; // 5 days
+/**
+ * DM the guild owner about an error, but no more often than every 5 days.
+ */
+async function notifyOwnerOfError(guild, client, error, context = {}) {
+    const DATA_DIR = path.join(__dirname, '../.notify');
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
-function getConfigPath(guildId) {
-    // ensure directory
-    if (!fs.existsSync(GUILDS_DIR)) {
-        console.log(`[notifyOwner] Creating guilds directory at ${GUILDS_DIR}`);
-        fs.mkdirSync(GUILDS_DIR, { recursive: true });
+    const file = path.join(DATA_DIR, `${guild.id}.json`);
+    let state = { lastNotified: 0 };
+    if (fs.existsSync(file)) {
+        try { state = JSON.parse(fs.readFileSync(file,'utf8')); }
+        catch {}
     }
-    const file = path.join(GUILDS_DIR, `${guildId}.json`);
-    console.log(`[notifyOwner] Config path for guild ${guildId} is ${file}`);
-    return file;
-}
 
-function loadConfig(guildId) {
-    const file = getConfigPath(guildId);
-    if (!fs.existsSync(file)) {
-        console.log(`[notifyOwner] No existing config for ${guildId}, returning empty object`);
-        return {};
-    }
-    let cfg;
-    try {
-        cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
-        console.log(`[notifyOwner] Loaded config for ${guildId}:`, cfg);
-    } catch (err) {
-        console.error(`[notifyOwner] Error reading/parsing ${file}:`, err);
-        cfg = {};
-    }
-    return cfg;
-}
-
-function saveConfig(guildId, config) {
-    const file = getConfigPath(guildId);
-    console.log(`[notifyOwner] Writing config for guild ${guildId} to ${file}:`, config);
-    try {
-        fs.writeFileSync(file, JSON.stringify(config, null, 2), 'utf8');
-        console.log(`[notifyOwner] Successfully saved config for ${guildId}`);
-    } catch (err) {
-        console.error(`[notifyOwner] Failed to save config for ${guildId}:`, err);
-    }
-}
-
-async function notifyOwnerOfError(guild, client, error) {
-    const cfg = loadConfig(guild.id);
+    const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000;
     const now = Date.now();
-    if (cfg.lastFailureNotified && (now - cfg.lastFailureNotified) < NOTIFY_WINDOW) {
-        console.log(`[notifyOwner] Skipping notification for ${guild.id}, last sent ${(now - cfg.lastFailureNotified)/1000}s ago`);
+    if (now - state.lastNotified < FIVE_DAYS) return;
+
+    const ownerId = guild.ownerId;
+    let owner;
+    try {
+        owner = await client.users.fetch(ownerId);
+    } catch {
+        console.warn(`⚠️ Cannot fetch owner ${ownerId} of guild ${guild.id}`);
         return;
     }
 
-    const coreMsg = error.rawError?.message || error.message || 'Unknown error';
-    console.log(`[notifyOwner] Core error: ${coreMsg}`);
-
-    // ... build suggestions as before ...
+    const header = `🚨 **Toolkit Sync Error** in **${guild.name}**`;
+    const body = [
+        header,
+        `\`\`\`js\n${error.message || error}\n\`\`\``,
+        `Step: ${context.step || context.action || 'unknown'}`,
+        context.member ? `Member: ${context.member}` : null,
+        context.roleId ? `Role ID: ${context.roleId}` : null,
+        `Time: <t:${Math.floor(now/1000)}:F>`
+    ]
+        .filter(Boolean)
+        .join('\n');
 
     try {
-        console.log(`[notifyOwner] Fetching owner for guild ${guild.id}`);
-        const owner = await guild.fetchOwner();
-        console.log(`[notifyOwner] DM’ing ${owner.user.tag}`);
-        await owner.send(/* ... your DM content ... */);
-        console.log(`[notifyOwner] DM sent to ${owner.user.tag}`);
+        await owner.send(body);
+        state.lastNotified = now;
+        fs.writeFileSync(file, JSON.stringify(state, null, 2));
+        console.log(`✉️  Notified owner of ${guild.id} about error.`);
     } catch (dmErr) {
-        console.error(`[notifyOwner] Couldn’t DM owner of ${guild.id}:`, dmErr);
+        console.error(`❌ Failed to DM owner ${ownerId}:`, dmErr);
     }
-
-    cfg.lastFailureNotified = now;
-    saveConfig(guild.id, cfg);
 }
 
 module.exports = { notifyOwnerOfError };
